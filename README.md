@@ -1,44 +1,115 @@
 # roughvol
 
-> Part of a pair of C++ quant projects (sibling: [`orderflow-lab`](https://github.com/swayam555/orderflow-lab)). Built with a small shared library (`common/`).
+### Pricing stock options with the volatility model that quant researchers say fits the market best — built from scratch in C++, with exact sensitivities and a calibrator that finds the market's hidden parameters.
 
-**Docs:** [Overview of both projects](docs/OVERVIEW.md) · [Design](roughvol/DESIGN.md) · [Test plan](roughvol/TESTPLAN.md) · [Work plan](roughvol/WORKPLAN.md) · [Measured notes](roughvol/NOTES.md) · [Research survey](RESEARCH.md) · [Build conventions](PLAN.md)
-
-Rough Bergomi (rBergomi) Monte Carlo in C++20 on top of the small `qc` library (Philox RNG, parallel blocks, test shim). Rates and dividends are zero; options are European; forward variance xi0 is constant.
-
-## Toolchain (verified path)
-No system compiler is needed. The build uses `zig c++` (clang) plus CMake and Ninja from PyPI, installed into a local venv:
 ```
+   market parameters             simulate 65,536 futures           price + sensitivities
+ ┌──────────────────┐        ┌────────────────────────┐        ┌─────────────────────────┐
+ │ how rough is     │───────▶│ "rough" volatility     │───────▶│ option price            │
+ │ volatility?      │        │ paths, 400 steps each  │        │ implied volatility      │
+ │ how big are the  │        │ on every CPU core      │        │ 4 exact Greeks          │
+ │ swings?  ...     │◀───────│ (same answer on 1 or   │◀───────│ calibrated back to the  │
+ └──────────────────┘ repeat │  16 threads)           │  fit   │ market's prices         │
+                             └────────────────────────┘        └─────────────────────────┘
+```
+
+## In plain English
+
+An **option** is a bet on where a stock will be later. To price one you need to know how much the stock is likely to wobble —
+its **volatility**. Textbook models assume volatility changes smoothly. Real volatility doesn't: it is *jagged*, spiking and
+settling again within days. A 2014–2018 line of research (Gatheral, Bayer, Friz and others) showed that a **"rough"** model —
+volatility that wiggles like a coastline — matches real option prices far better, especially for options expiring soon.
+
+The catch: rough volatility has *memory*, so there is no tidy formula. The only way to price with it is to **simulate** it
+carefully, thousands of times, and average the outcomes. Doing that quickly and correctly is hard, and almost no open-source
+C++ code exists for it (a search of GitHub turned up one repo, with zero stars).
+
+This project does it, end to end:
+
+1. **Simulate** rough volatility accurately and fast, using every CPU core.
+2. **Price** options, and back out the *implied volatility* the market would quote.
+3. **Compute the Greeks** — how the price changes if each model setting changes — *exactly*, not by noisy "nudge and re-run".
+4. **Calibrate** — feed in a surface of option prices and the program finds the model settings that produced them.
+
+## The numbers (all measured, all reproducible)
+
+| What | Result |
+|---|---|
+| Price one option **and 4 exact Greeks** | **0.1 seconds** (65,536 simulated paths, 400 time steps each) |
+| Calibration | Given a 28-option price surface, **recovers all 4 hidden parameters**: errors ~1e-7 on the same random numbers; **0.5–1%** (and 0.008 on correlation) on completely *different* random numbers — the honest test |
+| Accuracy vs effort | Error shrinks exactly as theory predicts: ∝ paths^**−0.50** (measured −0.5016, −0.4975, −0.4988) |
+| Smarter averaging | Three variance-reduction tricks cut the variance of prices by **2.5–3.9×** for the same number of paths |
+| Greeks are right | Match finite-difference checks to **under 0.1% of the allowed tolerance** |
+| Matches theory | The "skew" of option prices follows the predicted power law of the roughness exponent: measured −0.456, −0.406, −0.305, −0.204, −0.002 against theory −0.45, −0.40, −0.30, −0.20, 0.00 |
+| Exactly reproducible | Prices and Greeks are **bit-for-bit identical** on 1, 3 or 8 threads |
+| Tests | **19 tests pass** |
+
+Sanity checks that must hold, and do: with zero volatility-of-volatility it reproduces Black–Scholes to 1e-12; at the
+no-roughness point (H = 0.5) it matches an independent simulator to 1e-12.
+
+## Try it
+
+```bash
+# no compiler needed: this uses zig (a C++ compiler) from PyPI
 uv venv .toolchain/.venv
 uv pip install --python .toolchain/.venv/bin/python ziglang cmake ninja
-./build.sh release --test        # QC_JOBS=4 ./build.sh ... on machines with little RAM
+
+./build.sh release --test                        # build + run all 19 tests (QC_JOBS=4 on small machines)
+
+build/release/roughvol/rv_price --H=0.1 --eta=1.9 --rho=-0.9 --xi0=0.055 --T=0.5 --K=1.0 --n=400 --paths=65536
+build/release/roughvol/rv_calibrate              # recover hidden parameters from a price surface
+build/release/roughvol/rv_skew                   # check the roughness power law
+build/release/roughvol/rv_convergence            # accuracy vs number of simulated paths
 ```
-Other compilers and platforms are untested. `PLAN.md` and `RESEARCH.md` describe the shared build conventions and the literature survey; the library `common/` (`qc`) is shared with a sibling project.
 
-## Model and scheme
-dS = S sqrt(V) dB, V_t = xi0 exp(eta Y_t - eta^2 t^{2H} / 2), Y_t = sqrt(2H) int (t-s)^{H-1/2} dW_s (Bayer, Friz, Gatheral 2016). Simulation uses the hybrid scheme with kappa = 1 (Bennedsen, Lunde, Pakkanen 2017), with an exact 2x2 Cholesky factor for (dW, I) and the convolution in scatter (axpy) form, O(N^2) per path, no FFT. Log-price is Euler with left-point variance.
+Real output from `rv_price` (one option, rough volatility H = 0.1):
 
-Deliberate deviation: the compensator uses the exact discrete variance c_i of the simulated Yhat_i instead of t_i^{2H}, so E[V_i] = xi0 holds exactly in the scheme. Measured max |c_i / t_i^{2H} - 1| for n = 400, i <= 800: 3.2e-4 (H=0.02), 8.0e-4 (0.07), 9.4e-4 (0.1), 5.4e-4 (0.3).
+```
+OTM call price = 0.055434908  (se 0.000131)
+implied vol  = 0.19667
+Greeks of the OTM price (forward-mode AD):
+  d/dxi0 =  0.489439     d/deta = -0.00875741
+  d/drho =  0.00690843   d/dH   = -0.0422258
+time 0.102 s
+```
 
-Variance reduction: antithetic pairs, conditional (Romano-Touzi) estimator, and a control variate on the conditional asset price (simpler than McCrickerd-Pakkanen 2018, which inspired it; their gains are not claimed). Greeks are forward-mode AD with dual numbers `Dual<4>` (not adjoint AD). Calibration is Levenberg-Marquardt (Madsen, Nielsen, Tingleff 2004) on implied vols with AD Jacobians.
+and from `rv_calibrate` (hidden truth vs what the optimiser found; the second run uses completely different random numbers
+than the data was made with, which is the honest test):
 
-## Build and run
-`./build.sh release --test` from the repository root. Apps (write CSVs to `roughvol/results/`): `rv_price`, `rv_convergence`, `rv_skew`, `rv_calibrate`. Results are bitwise identical for any thread count (test with 1, 3, 8 threads, price_surface and price_greeks).
+```
+                truth     fitted    abs error
+same random numbers
+  xi0         0.05522    0.05523    1.8e-10
+  eta         1.90000    1.90000    1.6e-07
+  rho        -0.90000   -0.90000    1.5e-07
+  H           0.07000    0.07000    3.6e-08
+different random numbers
+  xi0         0.05522    0.05476    4.6e-04
+  eta         1.90000    1.91008    1.0e-02
+  rho        -0.90000   -0.89183    8.2e-03
+  H           0.07000    0.07140    1.4e-03
+```
 
-## Measured results (AMD Ryzen 7 5700U, other jobs running concurrently)
-- Checks that hold: eta = 0 reproduces Black-Scholes to 1e-12 relative; H = 0.5 matches an independent Brownian simulator to 1e-12; E[V_i], Var(Yhat_i), E[S_T], and the variance swap E[Q_T] = xi0 T are within 4 SE; conditional and unconditional estimators agree within 4 SE.
-- Greeks vs common-random-number finite differences: worst |AD - FD| / tolerance = 8.9e-4 (tolerance 1e-5 |AD| + 1e-8). Dual run costs 2.0x the double run.
-- Variance reduction (T = 0.5, n = 400, 2^16 paths, calibration-truth parameters; `results/vr.csv`), factor vs unconditional plain at c = -0.3 / 0 / 0.2: conditional plain 1.24 / 1.57 / 2.43; conditional antithetic 1.30 / 1.76 / 2.11; conditional antithetic + CV 2.48 / 3.86 / 3.13. Efficiency gain (including time) of the last: 5.5 / 8.6 / 7.0. Antithetics alone do not help every strike (unconditional, c = 0.2: 0.91).
-- Convergence in paths (`conv_paths.csv`): slope of log(IV SE) vs log(paths) = -0.5016 +- 0.0018, -0.4975 +- 0.0010, -0.4988 +- 0.0023 (c = -0.3, 0, 0.2).
-- Convergence in steps (`conv_steps.csv`, 2^18 paths, reference n = 1600): the bias is mostly below noise. Only c = 0.2 has enough points above 3 SE: empirical weak order 0.85 +- 0.08 (5 points, n = 25..400 or 800). For c = -0.3 and 0 fewer than 3 points qualified, so no order is claimed for them.
-- ATM skew (`skew.csv`; xi0 = 0.04, eta = 1, rho = -0.7, 200 steps per maturity, 2^18 paths, T in {0.005..0.08}); OLS slope of log|skew| on log T vs H - 1/2: H=0.05: -0.456 (theory -0.45); 0.1: -0.406 (-0.40); 0.2: -0.305 (-0.30); 0.3: -0.204 (-0.20); 0.5: -0.002 (0). At H = 0.5, T = 0.01 the skew is -0.1740 +- 0.0002 against rho eta / 4 = -0.175. The ratio of the measured skew to the small-time constant rho eta sqrt(2H) / (2(H+1/2)(H+3/2)) T^{H-1/2} (recalled from Bayer et al. 2019, not re-derived here) is 0.96-0.98 for H = 0.1.
-- Calibration to a synthetic surface (28 quotes, truth xi0 = 0.235^2, eta = 1.9, rho = -0.9, H = 0.07; n = 400, 2^15 paths): the surface is generated by the same model and scheme, so this tests the optimiser and the Jacobian, not model fit to data.
-  | | xi0 | eta | rho | H |
-  |---|---|---|---|---|
-  | same seed, abs error | 1.8e-10 | 1.6e-7 | 1.5e-7 | 3.6e-8 |
-  | different seed (target 1001, calibration 4242), error | -0.84% | +0.53% | +0.0082 | +0.0014 |
-  Same seed: 7 iterations; different seed: 8 iterations, final cost 2.4e-5 (Monte Carlo noise floor).
-- Speed: about 2.2e5 paths/s for n = 400, T = 1 (conditional, antithetic, CV) on 16 threads.
+## What makes it solid
 
-## Limitations
-Constant xi0 (no forward-variance curve), r = q = 0, European payoffs only, O(N^2) cost per path, Greeks require H <= 0.49, H in [0.02, 0.5]. No published rBergomi price table is used as a reference.
+- **Checked against theory, not just "looks right"** — limits with known answers, power-law slopes, convergence rates, and exact
+  agreement with finite differences using common random numbers.
+- **Exact derivatives** — the Greeks come from dual-number automatic differentiation threaded through the simulation, so there is
+  no step-size to tune.
+- **Honest about limits** — constant forward variance, zero interest rates, European options only; calibration is demonstrated on
+  synthetic data. One deliberate deviation from the textbook scheme (an exact variance correction) is documented and tested.
+  The implied-volatility test skips 28 of 196 extreme cases that cannot be inverted in double precision — and says why.
+
+Built on recent research from Imperial College London (rough Bergomi extensions) and the foundational papers by
+Bayer–Friz–Gatheral, Gatheral–Jaisson–Rosenbaum and Bennedsen–Lunde–Pakkanen. Full list in [`RESEARCH.md`](RESEARCH.md).
+
+## Go deeper
+
+[Overview of both projects](docs/OVERVIEW.md) ·
+[Full technical report](roughvol/README.md) ·
+[Design](roughvol/DESIGN.md) ·
+[Test plan](roughvol/TESTPLAN.md) ·
+[Measured notes & deviations](roughvol/NOTES.md) ·
+sibling project: [orderflow-lab](https://github.com/swayam555/orderflow-lab)
+
+*A research and learning project, not a trading system. Nothing here is investment advice.*
