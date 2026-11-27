@@ -38,3 +38,13 @@ Deviations / findings (all minimal, none loosen a tolerance):
 - Measured: worst |AD - FD| / (1e-5|AD| + 1e-8) over 2 maturities x 3 strikes x 3 H x 4 parameters = 8.9e-4 (the AD derivative matches FD ~1000x better than the tolerance). Exact-BS case: dP/dxi0 within 1e-12 rel, dP/drho = dP/dH = dP/deta = 0 (<=1e-14; d/deta at eta=0 and d/drho at rho=0 cancel exactly within each antithetic pair).
 - Dual<4> run costs 2.0x the double run (n=200, 2^14 paths, 6 quotes); budget was <= 8x.
 - ATM T=1, P*, 2^14 paths: dP/dxi0 = 0.859 +- 0.004 (>0), dP/deta = -0.0103 +- 0.0002, dP/drho = 0.0064 +- 0.0006, dP/dH = -0.040 +- 0.002.
+
+## B6 LM + calibration
+- LM: `LmOptions` unchanged; `LmResult` gained `trace` (iter, cost, mu, x per accepted step) used for the CSV. A std::exception from the residual function at a *trial* point rejects the step (mu *= nu) instead of aborting; at the start point it propagates. Rosenbrock from (-1.2, 1): 17 iterations, 33 evaluations.
+- calibrate() always evaluates r and J through `price_greeks` (value part = price_surface to 1e-13), so the Jacobian is the exact derivative of the objective on the fixed seed.
+- Quick test (6 quotes, n=200, 2^13 paths, same seed 4242): 9 iterations, 19 evals, cost 4.0e-18, recovery exact to the printed digits (< 1e-3 required), 0.8 s.
+- Full surface (28 quotes, n=400, 2^15 paths), `rv_calibrate` / slow tests:
+  - same seed: 7 iterations, 15 evaluations, reason gradient, cost 4.6e-17; abs errors xi0 1.8e-10, eta 1.6e-7, rho 1.5e-7, H 3.6e-8; 6.6 s.
+  - different seed (target seed 1001, calibration seed 4242): 8 iterations, cost 2.4e-5 (MC noise floor); xi0 0.05476 vs 0.05522 (-0.84%), eta 1.9101 vs 1.9 (+0.53%), rho -0.8918 vs -0.9 (+0.0082), H 0.07140 vs 0.07 (+0.0014); 9.6 s. All inside the TESTPLAN 8.2 limits (2%, 10%, 0.05, 0.02) on the first attempt; no 2^17 rerun needed.
+- `calibration.csv` / `calibration_trace.csv` carry an extra leading `run` column (same_seed | diff_seed) and calibration.csv an extra `rel_err` column, since both runs go in one file.
+- Slow tests live in their own executable (test_calibration_slow, label slow) because a ctest label applies per executable.
