@@ -2,6 +2,15 @@
 
 Rough Bergomi (rBergomi) Monte Carlo in C++20 on top of the small `qc` library (Philox RNG, parallel blocks, test shim). Rates and dividends are zero; options are European; forward variance xi0 is constant.
 
+## Toolchain (verified path)
+No system compiler is needed. The build uses `zig c++` (clang) plus CMake and Ninja from PyPI, installed into a local venv:
+```
+uv venv .toolchain/.venv
+uv pip install --python .toolchain/.venv/bin/python ziglang cmake ninja
+./build.sh release --test        # QC_JOBS=4 ./build.sh ... on machines with little RAM
+```
+Other compilers and platforms are untested. `PLAN.md` and `RESEARCH.md` describe the shared build conventions and the literature survey; the library `common/` (`qc`) is shared with a sibling project.
+
 ## Model and scheme
 dS = S sqrt(V) dB, V_t = xi0 exp(eta Y_t - eta^2 t^{2H} / 2), Y_t = sqrt(2H) int (t-s)^{H-1/2} dW_s (Bayer, Friz, Gatheral 2016). Simulation uses the hybrid scheme with kappa = 1 (Bennedsen, Lunde, Pakkanen 2017), with an exact 2x2 Cholesky factor for (dW, I) and the convolution in scatter (axpy) form, O(N^2) per path, no FFT. Log-price is Euler with left-point variance.
 

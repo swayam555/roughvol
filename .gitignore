@@ -1,4 +1,3 @@
 build/
-.toolchain/bin/
-.toolchain/.venv/
+.toolchain
 */results/
