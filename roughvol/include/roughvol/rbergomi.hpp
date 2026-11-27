@@ -45,6 +45,9 @@ template <class T>
 struct PairWorkspace {
     std::vector<double> dW;  // dW_i = Z1_i / sqrt(n), i = 1..N (index 0 unused)
     std::vector<T> yhat;     // Yhat_i, i = 0..N
+    // sqrt(V_{i-1}) for i = 1..N on the + and - path (index 0 unused); filled by simulate_pair (used by the
+    // unconditional estimator, which needs the path of the volatility, not only the sums at maturities).
+    std::vector<T> sqrtV_plus, sqrtV_minus;
 };
 
 // Per maturity index m (as given by maturity_steps): Q_m = sum V_{i-1} dt (years), M_m = sum sqrt(V_{i-1}) dW_i.

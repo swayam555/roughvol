@@ -98,6 +98,8 @@ void simulate_pair(const HybridKernel<T>& k, const RBergomiParams<T>& p, std::sp
     out.M_plus.resize(nm);
     out.Q_minus.resize(nm);
     out.M_minus.resize(nm);
+    ws.sqrtV_plus.resize(static_cast<std::size_t>(N) + 1);
+    ws.sqrtV_minus.resize(static_cast<std::size_t>(N) + 1);
     const double dt = 1.0 / static_cast<double>(k.n);
     const T half_eta2 = 0.5 * p.eta * p.eta;
     T Qp(0.0), Mp(0.0), Qm(0.0), Mm(0.0);
@@ -107,8 +109,11 @@ void simulate_pair(const HybridKernel<T>& k, const RBergomiParams<T>& p, std::sp
         const double dw = ws.dW[static_cast<std::size_t>(i)];
         Qp += Vp * dt;
         Qm += Vm * dt;
-        Mp += sqrt(Vp) * dw;
-        Mm -= sqrt(Vm) * dw;  // minus path has dW -> -dW
+        const T sp = sqrt(Vp), sm = sqrt(Vm);
+        ws.sqrtV_plus[static_cast<std::size_t>(i)] = sp;
+        ws.sqrtV_minus[static_cast<std::size_t>(i)] = sm;
+        Mp += sp * dw;
+        Mm -= sm * dw;  // minus path has dW -> -dW
         while (next < nm && maturity_steps[next] == i) {
             out.Q_plus[next] = Qp;
             out.M_plus[next] = Mp;

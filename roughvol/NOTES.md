@@ -17,3 +17,17 @@ Deviations / findings (all minimal, none loosen a tolerance):
 - At H = 0.5 `Gamma_k` is forced to exactly 1.0 (value part only; the derivative part is kept) so that TESTPLAN 3.1 "Gamma_k = 1 exactly" holds; the expm1/log1p form gives 1 +- 1 ulp there. Greeks never use H = 0.5.
 - Measured: max |c_i/t_i^{2H} - 1| (n = 400, i <= 800): H=0.02 3.2e-4, 0.07 8.0e-4, 0.1 9.35e-4, 0.3 5.4e-4 (architect's 9.4e-4 reproduced). Gamma_k at k=1e6 vs long double: <= 4.6e-14 rel. Dual-kernel H derivative vs central FD: <= 1.7e-9 rel (spec 1e-7). Scatter vs gather (N=300): <= 4.7e-15 abs.
 - TESTPLAN 4.3-4.5 need the pricer; they are implemented with B4 in test_paths.cpp / test_pricer.cpp.
+
+## B4 pricer (conditional/unconditional, antithetic, CV, variance swap, rv_price)
+- `PairWorkspace` also stores sqrt(V_{i-1}) per step on both paths (needed by the unconditional estimator, which simulates W-perp per step). Added `call_put_from_otm` (parity helper used by the parity test).
+- Test layout: TESTPLAN 4.3-4.11 are in test_paths.cpp (labels unit;stat), TESTPLAN 5 in test_pricer.cpp (stat), 10 (price_surface part) in test_determinism.cpp (unit;parallel).
+- No reference price table exists (per TESTPLAN). Checks pass: eta=0 exact BS (<=1e-12 rel, SE <= 1e-15); H=0.5 independent simulator agrees to 1e-12 rel; E[V_i], Var(Yhat_i), E[S_eff], E[S_T] (unconditional), variance swap all within 4 SE (E[V_199] = 0.03950 +- 0.00040 vs 0.04, E[Q_T] = 0.040056 +- 0.000105); conditional vs unconditional agree within 4 SE at 3 strikes.
+- Variance per path (se^2*paths; seed 5002, 2^16 paths, n=400, T=0.5, P*), strikes c = ln K = -0.3 / 0 / 0.2:
+  | method | c=-0.3 | c=0 | c=0.2 |
+  | unconditional plain | 6.77e-4 | 4.45e-3 | 9.38e-5 |
+  | unconditional antithetic | 7.08e-4 | 2.79e-3 | 9.74e-5 |
+  | conditional plain | 3.45e-4 | 1.07e-3 | 2.70e-6 |
+  | conditional antithetic | 3.60e-4 | 6.18e-4 | 2.86e-6 |
+  | conditional antithetic + CV | 1.95e-4 | 3.40e-4 | 1.76e-6 |
+  Factors: conditioning 1.96 / 4.15 / 34.7; antithetics on top of conditioning 0.96 / 1.73 / 0.94 (antithetics HURT slightly away from ATM, the test only constrains ATM); CV on top 1.85 / 1.82 / 1.63. IVs at P*: 0.2696 / 0.1812 / 0.1462 (c = -0.3 / 0 / 0.2). SE ratio 2^16 vs 2^14: 0.522 / 0.497 / 0.514.
+- Speed: rv_price, n=400, T=1, 2^16 paths (conditional, antithetic, CV on), 16 threads while the other agent was also running: 0.29 s, 2.2e5 paths/s.
