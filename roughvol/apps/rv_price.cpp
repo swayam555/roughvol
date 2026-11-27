@@ -28,6 +28,14 @@ int main(int argc, char** argv) {
                     static_cast<unsigned long long>(cfg.seed));
         std::printf("OTM %s price = %.8g  (se %.3g)\n", r.otm_type == rv::OptType::Call ? "call" : "put", r.otm_price, r.se);
         std::printf("implied vol  = %.6g  (se %.3g, status %d)\n", r.iv, r.iv_se, static_cast<int>(r.iv_status));
+        if (p.H <= 0.49) {
+            const auto g = rv::price_greeks(p, S0, std::span<const rv::Quote>(&q, 1), grid, cfg)[0];
+            const char* names[4] = {"xi0", "eta", "rho", "H"};
+            std::printf("Greeks of the OTM price (forward-mode AD, conditional estimator, no CV):\n");
+            for (int k = 0; k < 4; ++k) std::printf("  d/d%-3s = % .6g  (se %.3g)\n", names[k], g.d[static_cast<std::size_t>(k)], g.d_se[static_cast<std::size_t>(k)]);
+        } else {
+            std::printf("Greeks skipped: need H <= 0.49\n");
+        }
         std::printf("time %.3f s, %.3g paths/s\n", secs, static_cast<double>(cfg.paths) / secs);
         return 0;
     } catch (const std::exception& e) {

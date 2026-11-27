@@ -31,3 +31,10 @@ Deviations / findings (all minimal, none loosen a tolerance):
   | conditional antithetic + CV | 1.95e-4 | 3.40e-4 | 1.76e-6 |
   Factors: conditioning 1.96 / 4.15 / 34.7; antithetics on top of conditioning 0.96 / 1.73 / 0.94 (antithetics HURT slightly away from ATM, the test only constrains ATM); CV on top 1.85 / 1.82 / 1.63. IVs at P*: 0.2696 / 0.1812 / 0.1462 (c = -0.3 / 0 / 0.2). SE ratio 2^16 vs 2^14: 0.522 / 0.497 / 0.514.
 - Speed: rv_price, n=400, T=1, 2^16 paths (conditional, antithetic, CV on), 16 threads while the other agent was also running: 0.29 s, 2.2e5 paths/s.
+
+## B5 Greeks (Dual<4>)
+- `price_greeks` shares `run_block<T>` with the double pricer (T = Dual<4>); CV forced off, Unconditional rejected, H > 0.49 throws.
+- Deviation: the central FD in TESTPLAN 6.2 takes its bumped prices from `price_surface` (CV off, same seed) instead of `price_greeks(...).price`, because at H = 0.49 the +h bump leaves the Greek-domain (H <= 0.49) and price_greeks throws. The two prices agree to 1e-13 relative (test 6.3), i.e. the same CRN estimator.
+- Measured: worst |AD - FD| / (1e-5|AD| + 1e-8) over 2 maturities x 3 strikes x 3 H x 4 parameters = 8.9e-4 (the AD derivative matches FD ~1000x better than the tolerance). Exact-BS case: dP/dxi0 within 1e-12 rel, dP/drho = dP/dH = dP/deta = 0 (<=1e-14; d/deta at eta=0 and d/drho at rho=0 cancel exactly within each antithetic pair).
+- Dual<4> run costs 2.0x the double run (n=200, 2^14 paths, 6 quotes); budget was <= 8x.
+- ATM T=1, P*, 2^14 paths: dP/dxi0 = 0.859 +- 0.004 (>0), dP/deta = -0.0103 +- 0.0002, dP/drho = 0.0064 +- 0.0006, dP/dH = -0.040 +- 0.002.

@@ -230,6 +230,50 @@ std::vector<PriceResult> price_surface(const RBergomiParams<double>& params, dou
     return res;
 }
 
+std::vector<GreeksResult> price_greeks(const RBergomiParams<double>& params, double S0, std::span<const Quote> quotes,
+                                       const GridSpec& grid, McConfig cfg) {
+    using D = Dual<4>;
+    params.validate();
+    if (!(params.H <= 0.49)) {
+        throw std::invalid_argument("price_greeks: H must be <= 0.49 (value " + std::to_string(params.H) + ")");
+    }
+    cfg.control_variate = false;
+    const Setup st = prepare(S0, quotes, grid, cfg);
+    const std::size_t nq = quotes.size();
+    const RBergomiParams<D> pd{D::variable(params.xi0, 0), D::variable(params.eta, 1), D::variable(params.rho, 2),
+                               D::variable(params.H, 3)};
+    const auto ker = HybridKernel<D>::build(pd.H, st.n, st.N);
+    const std::int64_t n_blocks = cfg.paths / kBlockPaths;
+    using Acc = std::array<qc::RunningStats, 5>;  // value, d/dxi0, d/deta, d/drho, d/dH
+    std::vector<std::vector<Acc>> blocks(static_cast<std::size_t>(n_blocks), std::vector<Acc>(nq));
+    qc::parallel_blocks(n_blocks, cfg.threads, [&](std::int64_t blk) {
+        auto& acc = blocks[static_cast<std::size_t>(blk)];
+        auto consume = [&](const PairOut<D>&, std::span<const D> y, std::span<const D>) {
+            for (std::size_t q = 0; q < nq; ++q) {
+                acc[q][0].add(y[q].v);
+                for (std::size_t k = 0; k < 4; ++k) acc[q][k + 1].add(y[q].d[k]);
+            }
+        };
+        run_block<D>(ker, pd, S0, st, cfg, blk, kPurposeZ, kPurposeWperp, consume);
+    });
+    std::vector<GreeksResult> res(nq);
+    for (std::size_t q = 0; q < nq; ++q) {
+        Acc tot;
+        for (std::int64_t blk = 0; blk < n_blocks; ++blk) {
+            for (std::size_t j = 0; j < 5; ++j) tot[j].merge(blocks[static_cast<std::size_t>(blk)][q][j]);
+        }
+        GreeksResult r{};
+        r.price = tot[0].mean();
+        r.se = tot[0].se();
+        for (std::size_t k = 0; k < 4; ++k) {
+            r.d[k] = tot[k + 1].mean();
+            r.d_se[k] = tot[k + 1].se();
+        }
+        res[q] = r;
+    }
+    return res;
+}
+
 CallPut call_put_from_otm(const PriceResult& r, double S0, double K) {
     if (r.otm_type == OptType::Call) return {r.otm_price, r.otm_price - (S0 - K)};
     return {r.otm_price + (S0 - K), r.otm_price};

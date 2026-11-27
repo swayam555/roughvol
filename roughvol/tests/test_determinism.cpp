@@ -50,3 +50,22 @@ TEST_CASE("same seed reproduces, different seed differs") {
     cfg.seed = 8;
     CHECK_FALSE(same(a, price_surface(kPstar, 1.0, qs, GridSpec{100}, cfg)));
 }
+
+TEST_CASE("price_greeks is bitwise identical for any thread count") {
+    const std::vector<Quote> qs = {{0.5, 0.8}, {0.5, 1.0}, {0.25, 1.2}};
+    McConfig cfg;
+    cfg.paths = 1 << 12;
+    cfg.seed = 99;
+    cfg.threads = 1;
+    const auto ref = price_greeks(kPstar, 1.0, qs, GridSpec{100}, cfg);
+    for (unsigned t : {3u, 8u}) {
+        cfg.threads = t;
+        const auto g = price_greeks(kPstar, 1.0, qs, GridSpec{100}, cfg);
+        bool eq = true;
+        for (std::size_t i = 0; i < ref.size(); ++i) {
+            eq = eq && bits_equal(ref[i].price, g[i].price) && bits_equal(ref[i].se, g[i].se);
+            for (std::size_t k = 0; k < 4; ++k) eq = eq && bits_equal(ref[i].d[k], g[i].d[k]) && bits_equal(ref[i].d_se[k], g[i].d_se[k]);
+        }
+        CHECK(eq);
+    }
+}

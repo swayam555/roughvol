@@ -43,6 +43,16 @@ struct PriceResult {
                                                      std::span<const Quote> quotes, const GridSpec& grid,
                                                      const McConfig& cfg);
 
+// OTM price and its pathwise derivatives (forward-mode AD) with respect to (xi0, eta, rho, H), plus MC standard errors.
+struct GreeksResult {
+    double price, se;
+    std::array<double, 4> d, d_se;
+};
+// Prices and Greeks of the OTM option at every quote using Dual<4> paths. The estimator is conditional (the
+// derivative of the estimator is exact for the given seed); the control variate is forced off; H must be <= 0.49.
+[[nodiscard]] std::vector<GreeksResult> price_greeks(const RBergomiParams<double>& params, double S0,
+                                                     std::span<const Quote> quotes, const GridSpec& grid, McConfig cfg);
+
 struct CallPut {
     double call, put;
 };
