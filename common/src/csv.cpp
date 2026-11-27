@@ -44,6 +44,7 @@ void CsvWriter::row(std::initializer_list<std::variant<double, std::int64_t, std
         }
     }
     out_ << '\n';
+    if (!out_) throw std::runtime_error("CsvWriter::row: write failed (disk full or closed stream?)");
 }
 
 }  // namespace qc

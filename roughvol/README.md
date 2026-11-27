@@ -1,5 +1,7 @@
 # roughvol
 
+> Part of a pair of C++ quant projects (with a sibling, `orderflow-lab`). A full overview of both, the research behind them and how to build and test is in [`docs/OVERVIEW.md`](../docs/OVERVIEW.md).
+
 Rough Bergomi (rBergomi) Monte Carlo in C++20 on top of the small `qc` library (Philox RNG, parallel blocks, test shim). Rates and dividends are zero; options are European; forward variance xi0 is constant.
 
 ## Toolchain (verified path)

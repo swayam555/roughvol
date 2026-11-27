@@ -238,6 +238,7 @@ std::vector<GreeksResult> price_greeks(const RBergomiParams<double>& params, dou
         throw std::invalid_argument("price_greeks: H must be <= 0.49 (value " + std::to_string(params.H) + ")");
     }
     cfg.control_variate = false;
+    cfg.estimator = Estimator::Conditional;  // the dual-number path is only defined for the conditional estimator
     const Setup st = prepare(S0, quotes, grid, cfg);
     const std::size_t nq = quotes.size();
     const RBergomiParams<D> pd{D::variable(params.xi0, 0), D::variable(params.eta, 1), D::variable(params.rho, 2),
