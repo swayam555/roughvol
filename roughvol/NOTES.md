@@ -48,3 +48,9 @@ Deviations / findings (all minimal, none loosen a tolerance):
   - different seed (target seed 1001, calibration seed 4242): 8 iterations, cost 2.4e-5 (MC noise floor); xi0 0.05476 vs 0.05522 (-0.84%), eta 1.9101 vs 1.9 (+0.53%), rho -0.8918 vs -0.9 (+0.0082), H 0.07140 vs 0.07 (+0.0014); 9.6 s. All inside the TESTPLAN 8.2 limits (2%, 10%, 0.05, 0.02) on the first attempt; no 2^17 rerun needed.
 - `calibration.csv` / `calibration_trace.csv` carry an extra leading `run` column (same_seed | diff_seed) and calibration.csv an extra `rel_err` column, since both runs go in one file.
 - Slow tests live in their own executable (test_calibration_slow, label slow) because a ctest label applies per executable.
+
+## B7/B8 apps, README, final checks
+- `atm_skew` (skew.hpp/.cpp) added to the library; its SE is the standard deviation of the skew over 8 replicate runs with seeds seed+1..seed+8 (the price API does not expose the covariance of two strikes). Slow tests in separate executables (test_skew_slow, test_calibration_slow).
+- Skew: H=0.5 T=0.01: -0.17399 +- 0.00022 (target -0.175, test needs 10%, SE < 2%). Slow test H=0.1: slope -0.4060 +- 0.0004 (needs [-0.47,-0.33]); psi/asymptotic 0.975 (T=0.005) .. 0.959 (T=0.08) so the recalled constant is consistent to ~3%. rv_skew slopes: H=0.05 -0.456, 0.1 -0.406, 0.2 -0.305, 0.3 -0.204, 0.5 -0.002.
+- Convergence paths slopes -0.5016/-0.4975/-0.4988. Steps: weak order only estimable for c=0.2 (0.848 +- 0.080); c=-0.3 and 0 have <3 points above 3 se_diff (bias below noise at 2^18 paths), not claimed.
+- Suites: release 19/19 (incl. slow), ubsan 10/10 (rv+common non-slow), tsan 2/2 (-L parallel: common.test_parallel, rv.test_determinism).

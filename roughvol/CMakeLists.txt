@@ -1,6 +1,6 @@
 # roughvol: rough Bergomi hybrid-scheme Monte Carlo (namespace rv). Sources are listed explicitly.
 add_library(rv STATIC
-  src/version.cpp src/black_scholes.cpp src/rbergomi.cpp src/pricer.cpp src/lm.cpp src/calibration.cpp)
+  src/version.cpp src/black_scholes.cpp src/rbergomi.cpp src/pricer.cpp src/lm.cpp src/calibration.cpp src/skew.cpp)
 target_include_directories(rv PUBLIC include)
 target_link_libraries(rv PUBLIC qc)
 qc_target_defaults(rv)
@@ -23,3 +23,12 @@ qc_add_test(rv.test_calibration_slow tests/test_calibration_slow.cpp "slow")
 add_executable(rv_calibrate apps/rv_calibrate.cpp)
 target_link_libraries(rv_calibrate PRIVATE rv)
 qc_target_defaults(rv_calibrate)
+qc_add_test(rv.test_skew tests/test_skew.cpp "stat")
+qc_add_test(rv.test_skew_slow tests/test_skew_slow.cpp "slow")
+
+add_executable(rv_skew apps/rv_skew.cpp)
+target_link_libraries(rv_skew PRIVATE rv)
+qc_target_defaults(rv_skew)
+add_executable(rv_convergence apps/rv_convergence.cpp)
+target_link_libraries(rv_convergence PRIVATE rv)
+qc_target_defaults(rv_convergence)
